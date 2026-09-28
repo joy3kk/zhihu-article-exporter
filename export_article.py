@@ -8,20 +8,25 @@ from bs4 import BeautifulSoup
 from markdownify import markdownify
 
 
-def extract_article(html: str) -> str:
+def extract_article(html: str, source_url: str = "") -> str:
     soup = BeautifulSoup(html, "html.parser")
     title = soup.select_one("h1.Post-Title, article h1, h1")
     body = soup.select_one(
-        ".Post-RichTextContainer .RichText, .Post-RichTextContainer, "
-        "article .RichText, article"
+        "article .Post-RichText, .Post-RichText, "
+        ".Post-RichTextContainer .RichText, .Post-RichTextContainer, article .RichText"
     )
     if title is None or body is None:
         raise ValueError("未找到文章标题或正文。请在文章完整显示后保存网页 HTML。")
 
     canonical = soup.select_one('link[rel="canonical"]')
-    source = canonical.get("href", "") if canonical else ""
-    author = soup.select_one(".AuthorInfo-name, .Post-Author .UserLink-link")
-    author_name = author.get_text(" ", strip=True) if author else ""
+    source_meta = soup.select_one('meta[property="og:url"]')
+    source = source_url or (canonical.get("href", "") if canonical else "")
+    source = source or (source_meta.get("content", "") if source_meta else "")
+    author_name = next(
+        (node.get_text(" ", strip=True) for node in soup.select(".AuthorInfo-name, .Post-Author .UserLink-link")
+         if node.get_text(" ", strip=True)),
+        "",
+    )
     if not author_name:
         author_meta = soup.select_one('meta[name="author"]')
         author_name = author_meta.get("content", "") if author_meta else ""
@@ -34,7 +39,7 @@ def extract_article(html: str) -> str:
             "",
         )
         if image_url:
-            image["src"] = urljoin(source, image_url)
+            image["src"] = urljoin(source, image_url) if image_url.startswith("/") else image_url
 
     content = markdownify(str(body), heading_style="ATX").strip()
     if not content:
